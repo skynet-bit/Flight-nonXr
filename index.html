@@ -514,7 +514,7 @@ function checkAllLoaded(){
 }
 
 // ── World (airport)
-gltfLoader.load('assets/3.glb', gltf => {
+gltfLoader.load('assets/city.glb', gltf => {
   const world = gltf.scene;
   world.traverse(n=>{ if(n.isMesh){ n.receiveShadow=true; n.castShadow=true; }});
   const bb  = new THREE.Box3().setFromObject(world);
@@ -540,7 +540,7 @@ gltfLoader.load('assets/flight.glb', gltf => {
   model.scale.setScalar(sc3);
   // Center pivot at model centre
   model.rotation.y = Math.PI;
-  model.position.set(-ctr.x*sc3, -ctr.y*sc3+5, -ctr.z*sc3);
+  model.position.set(-ctr.x*sc3, -ctr.y*sc3, -ctr.z*sc3);
   jetGroup.add(model);
   // jet half-height + small gear offset
   jetGroundOff = (sz.y * sc3) / 2 + 0.4;
@@ -1079,7 +1079,7 @@ gltfLoader.setDRACOLoader(dracoLoader);
 let jetGroup = new THREE.Group();
 scene.add(jetGroup);
 
-let groundY = 0, jetGroundOff = 3, loadsDone = 0;
+let groundY = 0, jetGroundOff = 20, loadsDone = 0;
 
 function checkAllLoaded(){
   loadsDone++;
@@ -1089,7 +1089,7 @@ function checkAllLoaded(){
   }
 }
 
-gltfLoader.load('assets/3.glb', gltf => {
+gltfLoader.load('assets/city.glb', gltf => {
   const world = gltf.scene;
   world.traverse(n=>{ if(n.isMesh){ n.receiveShadow=true; n.castShadow=true; }});
   const bb  = new THREE.Box3().setFromObject(world);
@@ -1111,7 +1111,7 @@ gltfLoader.load('assets/flight.glb', gltf => {
   const sc3  = 14 / Math.max(sz.x, sz.y, sz.z);
   model.scale.setScalar(sc3);
   model.rotation.y = Math.PI;
-  model.position.set(-ctr.x*sc3, -ctr.y*sc3+5, -ctr.z*sc3);
+  model.position.set(-ctr.x*sc3, ctr.y*sc3, -ctr.z*sc3);
   jetGroup.add(model);
   jetGroundOff = (sz.y * sc3) / 2 + 0.4;
   checkAllLoaded();
