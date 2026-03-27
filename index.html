@@ -339,9 +339,9 @@ canvas{display:block;width:100vw;height:100vh;}
     <div class="hv" id="hv-hdg">HDG: 360°</div>
   </div>
   <div id="hud-status">
-    <div class="hp green" id="hp-gear">GEAR ▼</div>
+    <div class="hp red" id="hp-gear">GEAR ▲</div>
     <div class="hp green" id="hp-flaps">FLAPS OFF</div>
-    <div class="hp green" id="hp-thr">THR 0%</div>
+    <div class="hp green" id="hp-thr">THR 80%</div>
   </div>
   <div id="stall-warn">⚠ STALL</div>
 </div>
@@ -354,7 +354,7 @@ canvas{display:block;width:100vw;height:100vh;}
     <div id="throttle-track">
       <div id="throttle-fill"></div>
       <div id="throttle-notch"></div>
-      <div id="throttle-thumb"><span id="thr-pct">0%</span></div>
+      <div id="throttle-thumb"><span id="thr-pct">80%</span></div>
     </div>
   </div>
 
@@ -379,7 +379,7 @@ canvas{display:block;width:100vw;height:100vh;}
 
   <!-- Gear + Flaps -->
   <div id="action-btns">
-    <button class="act-btn" id="gear-btn">GEAR ▼ DN</button>
+    <button class="act-btn up" id="gear-btn">GEAR ▲ UP</button>
     <button class="act-btn" id="flaps-btn">FLAPS OFF</button>
   </div>
 
@@ -409,595 +409,6 @@ canvas{display:block;width:100vw;height:100vh;}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
 
 <script>
-/*
-'use strict';
-
-// ══════════════════════════════════════════════════════
-//  RENDERER
-// ══════════════════════════════════════════════════════
-const canvas = document.getElementById('canvas');
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
-renderer.outputEncoding    = THREE.sRGBEncoding;
-renderer.toneMapping       = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
-
-// ══════════════════════════════════════════════════════
-//  SCENE
-// ══════════════════════════════════════════════════════
-const scene = new THREE.Scene();
-scene.fog   = new THREE.FogExp2(0x8ecbf0, 0.00028);
-
-// Sky dome
-const skyMat = new THREE.ShaderMaterial({
-  uniforms:{
-    top:   {value: new THREE.Color(0x0044aa)},
-    mid:   {value: new THREE.Color(0x3399dd)},
-    bot:   {value: new THREE.Color(0xaaddff)},
-  },
-  vertexShader:`
-    varying float vY;
-    void main(){
-      vec4 wp = modelMatrix * vec4(position,1.0);
-      vY = normalize(wp.xyz).y;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-    }`,
-  fragmentShader:`
-    varying float vY;
-    uniform vec3 top, mid, bot;
-    void main(){
-      float t1 = clamp(vY * 2.0, 0.0, 1.0);
-      float t2 = clamp(vY * 6.0, 0.0, 1.0);
-      vec3 c = mix(bot, mid, t2);
-      c = mix(c, top, t1);
-      gl_FragColor = vec4(c, 1.0);
-    }`,
-  side: THREE.BackSide, depthWrite:false
-});
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(3500, 32, 16), skyMat));
-
-// ══════════════════════════════════════════════════════
-//  CAMERA
-// ══════════════════════════════════════════════════════
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.5, 5000);
-camera.position.set(0,10,30);
-
-// ══════════════════════════════════════════════════════
-//  LIGHTING
-// ══════════════════════════════════════════════════════
-scene.add(new THREE.AmbientLight(0xffffff, 0.38));
-
-const sun = new THREE.DirectionalLight(0xfff5d0, 1.7);
-sun.position.set(350, 500, 200);
-sun.castShadow = true;
-Object.assign(sun.shadow, {bias:-0.0004});
-Object.assign(sun.shadow.mapSize, {width:2048, height:2048});
-const sc = sun.shadow.camera;
-sc.near=1; sc.far=2500; sc.left=sc.bottom=-700; sc.right=sc.top=700;
-scene.add(sun);
-scene.add(sun.target);
-
-// Sun disc
-const sunDisc = new THREE.Mesh(
-  new THREE.SphereGeometry(28,16,16),
-  new THREE.MeshBasicMaterial({color:0xfffde0})
-);
-sunDisc.position.copy(sun.position).normalize().multiplyScalar(3000);
-scene.add(sunDisc);
-
-scene.add(new THREE.HemisphereLight(0x87CEEB, 0x3d5530, 0.45));
-
-// ══════════════════════════════════════════════════════
-//  MODEL LOADING
-// ══════════════════════════════════════════════════════
-const gltfLoader  = new THREE.GLTFLoader();
-const dracoLoader = new THREE.DRACOLoader();
-dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/draco/');
-gltfLoader.setDRACOLoader(dracoLoader);
-
-let jetGroup = new THREE.Group();
-scene.add(jetGroup);
-
-let groundY        = 0;   // world ground level in scene units
-let jetGroundOff   = 3;   // pivot height above ground when on runway
-let loadsDone      = 0;
-
-function checkAllLoaded(){
-  loadsDone++;
-  if(loadsDone >= 2){
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('menu').style.display = 'flex';
-  }
-}
-
-// ── World (airport)
-gltfLoader.load('assets/city.glb', gltf => {
-  const world = gltf.scene;
-  world.traverse(n=>{ if(n.isMesh){ n.receiveShadow=true; n.castShadow=true; }});
-  const bb  = new THREE.Box3().setFromObject(world);
-  const sz  = bb.getSize(new THREE.Vector3());
-  const ctr = bb.getCenter(new THREE.Vector3());
-  const sc2 = 900 / Math.max(sz.x, sz.y, sz.z);
-  world.scale.setScalar(sc2);
-  // Center XZ, sit on y=0
-  world.position.set(-ctr.x*sc2, -bb.min.y*sc2, -ctr.z*sc2);
-  scene.add(world);
-  groundY = 0;
-  checkAllLoaded();
-}, undefined, err=>{ console.warn('World load failed',err); checkAllLoaded(); });
-
-// ── Jet
-gltfLoader.load('assets/flight.glb', gltf => {
-  const model = gltf.scene;
-  model.traverse(n=>{ if(n.isMesh){ n.castShadow=true; n.receiveShadow=true; }});
-  const bb   = new THREE.Box3().setFromObject(model);
-  const sz   = bb.getSize(new THREE.Vector3());
-  const ctr  = bb.getCenter(new THREE.Vector3());
-  const sc3  = 14 / Math.max(sz.x, sz.y, sz.z);
-  model.scale.setScalar(sc3);
-  // Center pivot at model centre
-  model.rotation.y = Math.PI;
-  model.position.set(-ctr.x*sc3, -ctr.y*sc3, -ctr.z*sc3);
-  jetGroup.add(model);
-  // jet half-height + small gear offset
-  jetGroundOff = (sz.y * sc3) / 2 + 0.4;
-  checkAllLoaded();
-}, undefined, err=>{ console.warn('Jet load failed',err); checkAllLoaded(); });
-
-// ══════════════════════════════════════════════════════
-//  FLIGHT STATE
-// ══════════════════════════════════════════════════════
-const FS = {
-  pos:    new THREE.Vector3(),
-  vel:    new THREE.Vector3(),
-  pitch:  0,   // radians — +ve = nose down
-  roll:   0,   // radians — +ve = right wing down
-  yaw:    0,   // radians — +ve = nose right
-  thr:    0,   // 0–1
-  pitchIn:0,   // control input -1..1
-  rollIn: 0,
-  yawIn:  0,
-  flaps:  false,
-  gear:   true,
-  crashed:false,
-  paused: false,
-  started:false,
-};
-
-// ── Physics constants
-const G            = 9.81;   // gravity m/s²
-const MAX_THR      = 62;     // max thrust acceleration m/s²
-const DRAG_BASE    = 0.0048; // base drag (applied as: a_drag = k * v²)
-const DRAG_GEAR    = 0.0048; // extra drag with gear down (2× total)
-const DRAG_FLAPS   = 0.0020;
-const LIFT_K       = 0.0030; // lift = LIFT_K * v²  (stall ≈ 57 m/s clean)
-const LIFT_FLAPS   = 0.0016; // extra lift from flaps (stall ≈ 46 m/s)
-const PITCH_RATE   = 1.15;   // rad/s max
-const ROLL_RATE    = 1.80;
-const YAW_RATE     = 0.55;
-const STALL_V      = 32;     // m/s — below this: reduced control authority
-const EFF_V_FULL   = 65;     // m/s — full control authority above this
-const GND_Y_TOL    = 0.25;   // snap-to-ground tolerance
-const CRASH_VY     = -5.5;   // m/s vertical = hard crash
-const CRASH_PITCH  = 0.38;   // ~22° nose-down on touchdown
-const CRASH_ROLL   = 0.85;   // ~49° roll on touchdown
-const CAM_BACK     = 22;
-const CAM_UP       = 6;
-const CAM_LERP     = 0.055;
-
-// Reusable vectors (no GC in loop)
-const _q    = new THREE.Quaternion();
-const _e    = new THREE.Euler();
-const _fwd  = new THREE.Vector3();
-const _up   = new THREE.Vector3();
-const _rgt  = new THREE.Vector3();
-const _cOff = new THREE.Vector3();
-const _cTgt = new THREE.Vector3();
-const _lkAt = new THREE.Vector3();
-const _dvel = new THREE.Vector3();
-
-function computeMinY(){ return groundY + jetGroundOff; }
-
-function resetFlight(){
-  const minY = computeMinY();
-  FS.pos.set(0, minY, 0);
-  FS.vel.set(0,0,0);
-  FS.pitch=0; FS.roll=0; FS.yaw=0;
-  FS.thr=0; FS.pitchIn=0; FS.rollIn=0; FS.yawIn=0;
-  FS.flaps=false; FS.gear=true;
-  FS.crashed=false; FS.paused=false;
-  throttleCtrl.set(0);
-  joystickCtrl.reset();
-  rudderCtrl.reset();
-  updateGearUI();
-  updateFlapsUI();
-  document.getElementById('crashOverlay').style.display='none';
-  document.getElementById('pauseOverlay').style.display='none';
-  document.getElementById('stall-warn').style.display='none';
-  // Snap camera behind jet
-  _cOff.set(0, CAM_UP, CAM_BACK);
-  camera.position.copy(FS.pos).add(_cOff);
-  camera.lookAt(FS.pos);
-}
-
-// ══════════════════════════════════════════════════════
-//  PHYSICS UPDATE
-// ══════════════════════════════════════════════════════
-function updatePhysics(dt){
-  if(!FS.started || FS.crashed || FS.paused) return;
-
-  const spd    = FS.vel.length();
-  const spdKt  = spd * 1.944;
-
-  // Control effectiveness: 0 at standstill → 1 at EFF_V_FULL
-  const eff = Math.min(1, Math.max(0, (spd - 4) / (EFF_V_FULL - 4)));
-
-  // Build orientation
-  _e.set(FS.pitch, FS.yaw, FS.roll, 'YXZ');
-  _q.setFromEuler(_e);
-  _fwd.set(0,0,-1).applyQuaternion(_q);
-  _up.set(0,1,0).applyQuaternion(_q);
-
-  // Thrust → forward
-  const thrA = FS.thr * MAX_THR;
-  FS.vel.addScaledVector(_fwd, thrA * dt);
-
-  // Gravity
-  FS.vel.y -= G * dt;
-
-  // Lift → local up (proportional to v²)
-  let lk = LIFT_K + (FS.flaps ? LIFT_FLAPS : 0);
-  const liftA = lk * spd * spd;
-  FS.vel.addScaledVector(_up, liftA * dt);
-
-  // Drag (opposing velocity, proportional to v²)
-  let dk = DRAG_BASE + (FS.gear ? DRAG_GEAR : 0) + (FS.flaps ? DRAG_FLAPS : 0);
-  const dragA = dk * spd;
-  // vel -= vel * dragA * dt (drag scales with v², via spd factor)
-  _dvel.copy(FS.vel).multiplyScalar(dragA * dt);
-  FS.vel.sub(_dvel);
-
-  // Rotate by inputs
-  FS.pitch += FS.pitchIn * PITCH_RATE * eff * dt;
-  FS.roll  += FS.rollIn  * ROLL_RATE  * eff * dt;
-  FS.yaw   += FS.yawIn   * YAW_RATE   * eff * dt;
-
-  // Very slight auto-level for roll
-  FS.roll  *= 0.994;
-
-  // Clamp angles
-  FS.pitch = Math.max(-Math.PI*0.46, Math.min(Math.PI*0.46, FS.pitch));
-  FS.roll  = Math.max(-Math.PI,      Math.min(Math.PI,      FS.roll));
-
-  // Integrate position
-  FS.pos.addScaledVector(FS.vel, dt);
-
-  // ── Ground logic
-  const minY = computeMinY();
-  if(FS.pos.y <= minY){
-    const vy = FS.vel.y;
-    if(vy < CRASH_VY){
-      triggerCrash('Hard vertical impact at V/S ' + Math.round(vy * 196.85) + ' fpm'); return;
-    }
-    if(Math.abs(FS.pitch) > CRASH_PITCH){
-      triggerCrash('Nose-' + (FS.pitch>0?'down':'up') + ' landing attitude'); return;
-    }
-    if(Math.abs(FS.roll) > CRASH_ROLL){
-      triggerCrash('Extreme roll on touchdown'); return;
-    }
-    // Safe landing / ground roll
-    FS.pos.y  = minY;
-    FS.vel.y  = 0;
-    FS.vel.x *= 0.968;
-    FS.vel.z *= 0.968;
-    FS.roll  *= 0.88;
-    FS.pitch *= 0.90;
-  }
-
-  // ── Apply transform
-  jetGroup.position.copy(FS.pos);
-  _e.set(FS.pitch, FS.yaw, FS.roll, 'YXZ');
-  jetGroup.setRotationFromEuler(_e);
-
-  // Move shadow camera with aircraft
-  sun.target.position.copy(FS.pos);
-  sun.target.updateMatrixWorld();
-
-  // ── Follow camera
-  _cOff.set(0, CAM_UP, CAM_BACK).applyQuaternion(_q);
-  _cTgt.copy(FS.pos).add(_cOff);
-  camera.position.lerp(_cTgt, CAM_LERP);
-  _lkAt.set(0,0,-35).applyQuaternion(_q).add(FS.pos);
-  camera.lookAt(_lkAt);
-
-  // ── HUD update
-  const altFt = Math.max(0, FS.pos.y - minY) * 3.281;
-  const vsFpm = FS.vel.y * 196.85;
-  const hdg   = (((FS.yaw * 180/Math.PI) % 360) + 360) % 360;
-  document.getElementById('hv-spd').textContent = `SPD: ${spdKt.toFixed(0)} kt`;
-  document.getElementById('hv-alt').textContent = `ALT: ${altFt.toFixed(0)} ft`;
-  document.getElementById('hv-vs').textContent  = ` V/S: ${vsFpm>0?'+':''}${vsFpm.toFixed(0)}`;
-  document.getElementById('hv-hdg').textContent = `HDG: ${hdg.toFixed(0)}°`;
-  document.getElementById('hp-thr').textContent = `THR ${Math.round(FS.thr*100)}%`;
-
-  // Stall warning
-  const stallV = STALL_V * (FS.flaps ? 0.78 : 1.0);
-  document.getElementById('stall-warn').style.display =
-    (spd < stallV && FS.pos.y > minY + 2) ? 'block' : 'none';
-}
-
-function triggerCrash(reason){
-  FS.crashed = true;
-  FS.vel.set(0,0,0);
-  document.getElementById('crash-reason').textContent = reason || 'Aircraft destroyed on impact';
-  document.getElementById('crashOverlay').style.display = 'flex';
-}
-
-// ══════════════════════════════════════════════════════
-//  TOUCH CONTROLS
-// ══════════════════════════════════════════════════════
-const touchOwner = {}; // touchId → 'throttle'|'joystick'|'rudder'
-
-// ── Throttle ──────────────────────────────────────────
-const throttleCtrl = (()=>{
-  const track = document.getElementById('throttle-track');
-  const thumb = document.getElementById('throttle-thumb');
-  const fill  = document.getElementById('throttle-fill');
-  const pctEl = document.getElementById('thr-pct');
-  const PAD   = 4;
-  let val = 0;
-
-  function set(v){
-    val = Math.max(0, Math.min(1, v));
-    FS.thr = val;
-    const h   = track.clientHeight;
-    const th  = thumb.clientHeight || 28;
-    const rng = h - PAD*2 - th;
-    const px  = rng * val;
-    thumb.style.bottom = (PAD + px) + 'px';
-    fill.style.height  = (PAD + px + th/2) + 'px';
-    pctEl.textContent  = Math.round(val*100) + '%';
-    document.getElementById('hp-thr').textContent = `THR ${Math.round(val*100)}%`;
-  }
-
-  function fromTouch(t){
-    const r = track.getBoundingClientRect();
-    set((r.bottom - t.clientY) / r.height);
-  }
-
-  track.addEventListener('touchstart', e=>{
-    e.preventDefault();
-    for(const t of e.changedTouches){ touchOwner[t.identifier]='throttle'; fromTouch(t); }
-  },{passive:false});
-
-  return {set, fromTouch};
-})();
-
-// ── Joystick ──────────────────────────────────────────
-const joystickCtrl = (()=>{
-  const base  = document.getElementById('joystick-base');
-  const thumb = document.getElementById('joystick-thumb');
-  const R = 46; // max displacement radius px
-  let cx=0, cy=0;
-
-  function reset(){
-    FS.pitchIn=0; FS.rollIn=0;
-    thumb.style.left = '39px';
-    thumb.style.top  = '39px';
-  }
-
-  function fromTouch(t){
-    const dx = t.clientX - cx;
-    const dy = t.clientY - cy;
-    const d  = Math.sqrt(dx*dx + dy*dy);
-    const cl = Math.min(d, R);
-    const a  = Math.atan2(dy, dx);
-    const nx = Math.cos(a)*cl;
-    const ny = Math.sin(a)*cl;
-    const hw = (thumb.clientWidth||52)/2;
-    thumb.style.left = (65+nx-hw) + 'px';
-    thumb.style.top  = (65+ny-hw) + 'px';
-    FS.rollIn  =  nx/R;
-    FS.pitchIn =  ny/R;  // push forward (up screen) = negative pitchIn = nose up
-  }
-
-  base.addEventListener('touchstart', e=>{
-    e.preventDefault();
-    for(const t of e.changedTouches){
-      const r = base.getBoundingClientRect();
-      cx = r.left + r.width/2;
-      cy = r.top  + r.height/2;
-      touchOwner[t.identifier] = 'joystick';
-      fromTouch(t);
-    }
-  },{passive:false});
-
-  return {reset, fromTouch};
-})();
-
-// ── Rudder ────────────────────────────────────────────
-const rudderCtrl = (()=>{
-  const track  = document.getElementById('rudder-track');
-  const thumb  = document.getElementById('rudder-thumb');
-  const fillL  = document.getElementById('rudder-fill-l');
-  const fillR  = document.getElementById('rudder-fill-r');
-  const RANGE  = 85; // half-range px
-  let retId = null;
-
-  function setVal(v){
-    v = Math.max(-1, Math.min(1, v));
-    FS.yawIn = v;
-    const w = track.clientWidth || 210;
-    const px = w/2 + v*RANGE - 18;
-    thumb.style.left = px + 'px';
-    if(v >= 0){
-      fillL.style.width = '0';
-      fillR.style.width = (v*RANGE) + 'px';
-    } else {
-      fillR.style.width = '0';
-      fillL.style.width = (-v*RANGE) + 'px';
-    }
-  }
-
-  function fromTouch(t){
-    const r = track.getBoundingClientRect();
-    setVal((t.clientX - (r.left+r.width/2)) / RANGE);
-  }
-
-  function startReturn(){
-    if(retId) clearInterval(retId);
-    retId = setInterval(()=>{
-      FS.yawIn *= 0.78;
-      if(Math.abs(FS.yawIn) < 0.008){ FS.yawIn=0; clearInterval(retId); retId=null; }
-      setVal(FS.yawIn);
-    }, 28);
-  }
-
-  function reset(){
-    if(retId){ clearInterval(retId); retId=null; }
-    setVal(0);
-  }
-
-  track.addEventListener('touchstart', e=>{
-    e.preventDefault();
-    if(retId){ clearInterval(retId); retId=null; }
-    for(const t of e.changedTouches){ touchOwner[t.identifier]='rudder'; fromTouch(t); }
-  },{passive:false});
-
-  return {reset, fromTouch, startReturn};
-})();
-
-// ── Global touch routing ──────────────────────────────
-document.addEventListener('touchmove', e=>{
-  e.preventDefault();
-  for(const t of e.changedTouches){
-    const o = touchOwner[t.identifier];
-    if(o==='throttle') throttleCtrl.fromTouch(t);
-    else if(o==='joystick') joystickCtrl.fromTouch(t);
-    else if(o==='rudder')   rudderCtrl.fromTouch(t);
-  }
-},{passive:false});
-
-document.addEventListener('touchend', e=>{
-  for(const t of e.changedTouches){
-    const o = touchOwner[t.identifier];
-    if(o==='joystick') joystickCtrl.reset();
-    if(o==='rudder')   rudderCtrl.startReturn();
-    delete touchOwner[t.identifier];
-  }
-});
-
-document.addEventListener('touchcancel', e=>{
-  for(const t of e.changedTouches){
-    const o = touchOwner[t.identifier];
-    if(o==='joystick') joystickCtrl.reset();
-    if(o==='rudder')   rudderCtrl.reset();
-    delete touchOwner[t.identifier];
-  }
-});
-
-// ══════════════════════════════════════════════════════
-//  KEYBOARD (desktop fallback / testing)
-// ══════════════════════════════════════════════════════
-const K = {};
-window.addEventListener('keydown', e=>{ K[e.code]=true; });
-window.addEventListener('keyup',   e=>{ K[e.code]=false; });
-
-function handleKeys(dt){
-  if(!FS.started||FS.crashed||FS.paused) return;
-  FS.pitchIn  = K['ArrowUp']    ? 1 : K['ArrowDown']  ? -1 : 0;
-  FS.rollIn   = K['ArrowRight'] ? 1 : K['ArrowLeft']  ? -1 : 0;
-  FS.yawIn    = K['KeyA']       ? -1 : K['KeyD']      ?  1 : 0;
-  if(K['KeyW']){ FS.thr=Math.min(1,FS.thr+dt*0.8); throttleCtrl.set(FS.thr); }
-  if(K['KeyS']){ FS.thr=Math.max(0,FS.thr-dt*0.8); throttleCtrl.set(FS.thr); }
-}
-
-// ══════════════════════════════════════════════════════
-//  UI BUTTONS
-// ══════════════════════════════════════════════════════
-function updateGearUI(){
-  const btn = document.getElementById('gear-btn');
-  const hp  = document.getElementById('hp-gear');
-  if(FS.gear){
-    btn.textContent='GEAR ▼ DN'; btn.className='act-btn';
-    hp.textContent='GEAR ▼'; hp.className='hp green';
-  } else {
-    btn.textContent='GEAR ▲ UP'; btn.className='act-btn up';
-    hp.textContent='GEAR ▲'; hp.className='hp red';
-  }
-}
-
-function updateFlapsUI(){
-  const btn = document.getElementById('flaps-btn');
-  const hp  = document.getElementById('hp-flaps');
-  if(FS.flaps){
-    btn.textContent='FLAPS ON'; btn.className='act-btn on';
-    hp.textContent='FLAPS ON'; hp.className='hp amber';
-  } else {
-    btn.textContent='FLAPS OFF'; btn.className='act-btn';
-    hp.textContent='FLAPS OFF'; hp.className='hp green';
-  }
-}
-
-document.getElementById('gear-btn').addEventListener('click', ()=>{
-  FS.gear = !FS.gear; updateGearUI();
-});
-document.getElementById('flaps-btn').addEventListener('click', ()=>{
-  FS.flaps = !FS.flaps; updateFlapsUI();
-});
-document.getElementById('pause-btn').addEventListener('click', ()=>{
-  FS.paused = true;
-  document.getElementById('pauseOverlay').style.display='flex';
-});
-document.getElementById('resumeBtn').addEventListener('click', ()=>{
-  FS.paused = false;
-  document.getElementById('pauseOverlay').style.display='none';
-});
-document.getElementById('restartBtn').addEventListener('click', ()=>{ resetFlight(); });
-document.getElementById('crashRestartBtn').addEventListener('click', ()=>{ resetFlight(); });
-
-document.getElementById('startBtn').addEventListener('click', ()=>{
-  // Request immersive fullscreen
-  const el = document.documentElement;
-  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || (()=>{});
-  rfs.call(el).catch(()=>{});
-  // Lock landscape
-  if(screen.orientation && screen.orientation.lock){
-    screen.orientation.lock('landscape').catch(()=>{});
-  }
-  document.getElementById('menu').style.display   = 'none';
-  document.getElementById('hud').style.display     = 'block';
-  document.getElementById('controls').style.display= 'block';
-  FS.started = true;
-  resetFlight();
-});
-
-// ══════════════════════════════════════════════════════
-//  RESIZE
-// ══════════════════════════════════════════════════════
-window.addEventListener('resize', ()=>{
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-});
-
-// ══════════════════════════════════════════════════════
-//  RENDER LOOP
-// ══════════════════════════════════════════════════════
-let lastT = 0;
-function animate(t){
-  requestAnimationFrame(animate);
-  const dt = Math.min((t - lastT) / 1000, 0.05);
-  lastT = t;
-  handleKeys(dt);
-  updatePhysics(dt);
-  renderer.render(scene, camera);
-}
-requestAnimationFrame(animate);
-*/
 'use strict';
 
 // ══════════════════════════════════════════════════════
@@ -1013,10 +424,15 @@ renderer.outputEncoding    = THREE.sRGBEncoding;
 renderer.toneMapping       = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 
-const scene = new THREE.Scene();
-scene.fog   = new THREE.FogExp2(0x8ecbf0, 0.00028);
+// FIX 1: Set clear color to match sky/fog to prevent black void from extreme camera far-clipping
+renderer.setClearColor(0x8ecbf0); 
 
-// Sky dome
+const scene = new THREE.Scene();
+
+// Kept fog density low for 14,000 ft visibility
+scene.fog   = new THREE.FogExp2(0x8ecbf0, 0.00008); 
+
+// Sky dome (Expanded drastically so it renders below the high-altitude horizon)
 const skyMat = new THREE.ShaderMaterial({
   uniforms:{
     top:   {value: new THREE.Color(0x0044aa)},
@@ -1042,10 +458,10 @@ const skyMat = new THREE.ShaderMaterial({
     }`,
   side: THREE.BackSide, depthWrite:false
 });
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(3500, 32, 16), skyMat));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(45000, 32, 16), skyMat));
 
-// Camera
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.5, 5000);
+// Camera (Expanded Far clip plane massively from 25000 to 60000 to solve the black-cutoff issue)
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.5, 60000);
 camera.position.set(0,10,30);
 
 // Lighting
@@ -1068,8 +484,20 @@ sunDisc.position.copy(sun.position).normalize().multiplyScalar(3000);
 scene.add(sunDisc);
 scene.add(new THREE.HemisphereLight(0x87CEEB, 0x3d5530, 0.45));
 
+
+// FIX 2: Infinite Base Ground Plane
+// This guarantees that any microscopic gaps between chunks are filled with dark ground instead of black space.
+const baseGround = new THREE.Mesh(
+  new THREE.PlaneGeometry(100000, 100000),
+  new THREE.MeshLambertMaterial({color: 0x1a241c}) // Dark city/ground base color
+);
+baseGround.rotation.x = -Math.PI / 2;
+baseGround.position.y = -2; // Positioned safely just beneath the actual 3D city chunks
+scene.add(baseGround);
+
+
 // ══════════════════════════════════════════════════════
-//  MODEL LOADING
+//  MODEL LOADING & ENDLESS CITY SETUP
 // ══════════════════════════════════════════════════════
 const gltfLoader  = new THREE.GLTFLoader();
 const dracoLoader = new THREE.DRACOLoader();
@@ -1080,6 +508,13 @@ let jetGroup = new THREE.Group();
 scene.add(jetGroup);
 
 let groundY = 0, jetGroundOff = 20, loadsDone = 0;
+
+// Variables for Endless City Tiling
+let cityChunks = [];
+let chunkSizeX = 1800;
+let chunkSizeZ = 1800;
+let lastChunkX = 0;
+let lastChunkZ = 0;
 
 function checkAllLoaded(){
   loadsDone++;
@@ -1095,10 +530,31 @@ gltfLoader.load('assets/city.glb', gltf => {
   const bb  = new THREE.Box3().setFromObject(world);
   const sz  = bb.getSize(new THREE.Vector3());
   const ctr = bb.getCenter(new THREE.Vector3());
-  const sc2 = 900 / Math.max(sz.x, sz.y, sz.z);
+  
+  // FIX 3: Increased scale of city chunks to span a larger area from 14,000 ft
+  const sc2 = 1800 / Math.max(sz.x, sz.y, sz.z); 
   world.scale.setScalar(sc2);
+  
   world.position.set(-ctr.x*sc2, -bb.min.y*sc2, -ctr.z*sc2);
-  scene.add(world);
+  
+  // FIX 4: Aggressive Overlap to fix transparent boundaries
+  // By multiplying by 0.68, we force the irregular hexagonal models to overlap and fill the black gaps
+  chunkSizeX = sz.x * sc2 * 0.68;
+  chunkSizeZ = sz.z * sc2 * 0.68;
+  
+  const templateGroup = new THREE.Group();
+  templateGroup.add(world);
+
+  // FIX 5: Increased loop to 5x5 grid (25 chunks instead of 9) to hide the edges of the simulation at high altitudes
+  for(let x = -2; x <= 2; x++){
+    for(let z = -2; z <= 2; z++){
+      let chunk = templateGroup.clone();
+      chunk.position.set(x * chunkSizeX, 0, z * chunkSizeZ);
+      scene.add(chunk);
+      cityChunks.push(chunk);
+    }
+  }
+
   checkAllLoaded();
 }, undefined, checkAllLoaded);
 
@@ -1120,15 +576,23 @@ gltfLoader.load('assets/flight.glb', gltf => {
 // ══════════════════════════════════════════════════════
 //  FLIGHT STATE & PHYSICS
 // ══════════════════════════════════════════════════════
+const START_X = 0;
+const START_Z = 0;
+
 const FS = {
   pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-  pitch:0, roll:0, yaw:0, thr:0,
+  pitch:0, roll:0, yaw:0, thr:0.8, // Start at 80% thrust
   pitchIn:0, rollIn:0, yawIn:0,
-  flaps:false, gear:true, crashed:false, paused:false, started:false,
+  flaps:false, gear:false, // Start with gear UP since we are in the air
+  crashed:false, paused:false, started:false,
 };
 
 const G = 9.81, MAX_THR = 62, DRAG_BASE = 0.0048, DRAG_GEAR = 0.0048, DRAG_FLAPS = 0.0020;
-const LIFT_K = 0.0030, LIFT_FLAPS = 0.0016, PITCH_RATE = 1.15, ROLL_RATE = 1.80, YAW_RATE = 0.55;
+const LIFT_K = 0.0030, LIFT_FLAPS = 0.0016;
+
+// Retained the exact +25% sensitivity update
+const PITCH_RATE = 1.4375, ROLL_RATE = 2.25, YAW_RATE = 0.6875; 
+
 const STALL_V = 32, EFF_V_FULL = 65, CRASH_VY = -5.5, CRASH_PITCH = 0.38, CRASH_ROLL = 0.85;
 const CAM_BACK = 22, CAM_UP = 6, CAM_LERP = 0.055;
 
@@ -1140,12 +604,30 @@ function computeMinY(){ return groundY + jetGroundOff; }
 
 function resetFlight(){
   const minY = computeMinY();
-  FS.pos.set(0, minY, 0); FS.vel.set(0,0,0);
+  
+  // Altitude: 14,000 ft in meters is ~4,267 meters
+  const startAltitudeMeters = 467; 
+  FS.pos.set(START_X, minY + startAltitudeMeters, START_Z); 
+  
+  // Speed: Mach 0.8 is roughly 272 m/s. Jet faces exactly -Z at spawn rotation.
+  FS.vel.set(0, 0, -80);
+  
   FS.pitch=0; FS.roll=0; FS.yaw=0;
-  FS.thr=0; FS.pitchIn=0; FS.rollIn=0; FS.yawIn=0;
-  FS.flaps=false; FS.gear=true; FS.crashed=false; FS.paused=false;
-  throttleCtrl.set(0); joystickCtrl.reset(); rudderCtrl.reset();
-  updateGearUI(); updateFlapsUI();
+  
+  // Thrust: 80%
+  FS.thr=0.8; 
+  FS.pitchIn=0; FS.rollIn=0; yawIn=0;
+  
+  // Start Gear UP, Flaps OFF
+  FS.flaps=false; FS.gear=false; FS.crashed=false; FS.paused=false;
+  
+  // Sync the UI controls precisely to the spawn settings
+  throttleCtrl.set(0.8); 
+  joystickCtrl.reset(); 
+  rudderCtrl.reset();
+  updateGearUI(); 
+  updateFlapsUI();
+  
   document.querySelectorAll('.overlay').forEach(el => el.style.display='none');
   document.getElementById('stall-warn').style.display='none';
   _cOff.set(0, CAM_UP, CAM_BACK);
@@ -1168,15 +650,26 @@ function updatePhysics(dt){
   FS.vel.y -= G * dt;
 
   const lk = LIFT_K + (FS.flaps ? LIFT_FLAPS : 0);
-  FS.vel.addScaledVector(_up, (lk * spd * spd) * dt);
+  let liftA = lk * spd * spd;
+  
+  if (liftA > G * 1.2) {
+      liftA = G * 1.2 + (liftA - G * 1.2) * 0.02;
+  }
+  FS.vel.addScaledVector(_up, liftA * dt);
 
   const dk = DRAG_BASE + (FS.gear ? DRAG_GEAR : 0) + (FS.flaps ? DRAG_FLAPS : 0);
-  _dvel.copy(FS.vel).multiplyScalar(dk * spd * dt);
+  let dragMultiplier = dk * spd;
+  
+  if (dragMultiplier > 0.18) {
+      dragMultiplier = 0.18 + (dragMultiplier - 0.18) * 0.05;
+  }
+  
+  _dvel.copy(FS.vel).multiplyScalar(dragMultiplier * dt);
   FS.vel.sub(_dvel);
 
   FS.pitch += FS.pitchIn * PITCH_RATE * eff * dt;
-  FS.roll  += FS.rollIn  * ROLL_RATE  * eff * dt;
-  FS.yaw   += FS.yawIn   * YAW_RATE   * eff * dt;
+  FS.roll  -= FS.rollIn  * ROLL_RATE  * eff * dt;
+  FS.yaw   -= FS.yawIn   * YAW_RATE   * eff * dt;
   FS.roll  *= 0.994;
 
   FS.pitch = Math.max(-Math.PI*0.46, Math.min(Math.PI*0.46, FS.pitch));
@@ -1197,6 +690,32 @@ function updatePhysics(dt){
   jetGroup.position.copy(FS.pos);
   _e.set(FS.pitch, FS.yaw, FS.roll, 'YXZ');
   jetGroup.setRotationFromEuler(_e);
+  
+  // Snap the infinite base ground underneath the player
+  baseGround.position.x = FS.pos.x;
+  baseGround.position.z = FS.pos.z;
+  
+  // Seamless Endless World Updating for 5x5 Grid
+  if(cityChunks.length > 0) {
+    const currentChunkX = Math.round(FS.pos.x / chunkSizeX);
+    const currentChunkZ = Math.round(FS.pos.z / chunkSizeZ);
+    
+    if(currentChunkX !== lastChunkX || currentChunkZ !== lastChunkZ) {
+      let index = 0;
+      for(let x = -2; x <= 2; x++){
+        for(let z = -2; z <= 2; z++){
+          cityChunks[index].position.set(
+            (currentChunkX + x) * chunkSizeX, 
+            0, 
+            (currentChunkZ + z) * chunkSizeZ
+          );
+          index++;
+        }
+      }
+      lastChunkX = currentChunkX;
+      lastChunkZ = currentChunkZ;
+    }
+  }
 
   sun.target.position.copy(FS.pos);
   sun.target.updateMatrixWorld();
@@ -1397,3 +916,5 @@ requestAnimationFrame(animate);
 
 </script> </body>
 </html>
+
+
